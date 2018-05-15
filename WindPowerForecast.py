@@ -1,18 +1,12 @@
 # Import standard
 import numpy as np
 import pandas as pd
-import matplotlib
 import matplotlib.pyplot as plt
-import tensorflow as tf
-import seaborn as sns
-import missingno
 from matplotlib.dates import DayLocator, DateFormatter
 
 # Import keras
-import keras
 from keras.models import Sequential
-from keras.layers import InputLayer, Input, SimpleRNN
-from keras.layers import Dense, Dropout
+from keras.layers import InputLayer, SimpleRNN, Dense, Dropout
 from keras.optimizers import RMSprop
 
 # Import Scikit-Learn
@@ -20,11 +14,6 @@ from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVR
 from sklearn.neighbors import KNeighborsRegressor
 
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import mean_squared_error, r2_score
 
@@ -44,13 +33,13 @@ solution.set_index(['TIMESTAMP'], inplace=True)
 weather_forecast.set_index(['TIMESTAMP'], inplace=True)
 
 # Setting understandable feature names
-data['windspeed']  = data['WS10']
-data['zonal']      = data['U10']
+data['windspeed'] = data['WS10']
+data['zonal'] = data['U10']
 data['meridional'] = data['V10']
 data.drop(columns=['U10','V10','WS10','U100','V100','WS100'], inplace=True)
 
-weather_forecast['windspeed']  = weather_forecast['WS10']
-weather_forecast['zonal']      = weather_forecast['U10']
+weather_forecast['windspeed'] = weather_forecast['WS10']
+weather_forecast['zonal'] = weather_forecast['U10']
 weather_forecast['meridional'] = weather_forecast['V10']
 
 drop = ['U10','V10','WS10','U100','V100','WS100']
@@ -87,7 +76,6 @@ def wind_dir(data):
     deg=[]
     u,v = data['zonal'], data['meridional']
     wind_degree = 180/np.pi*np.arctan2(-u,-v)+180
-    wind_dir = pd.DataFrame(columns=[['car_dir','deg_dir']],index=data.index)
 
     for ind, bear in enumerate(wind_degree):
         for direction, interval in cardinal_degree.items():
@@ -101,11 +89,9 @@ def wind_dir(data):
     return car, deg
 
 
-
-
-data['car_dir'], data['deg_dir'] = wind_dir(data,'Measured')
+data['car_dir'], data['deg_dir'] = wind_dir(data)
 weather_forecast['car_dir'], weather_forecast['deg_dir'] =\
-                                        wind_dir(weather_forecast,'Forecast')
+                                        wind_dir(weather_forecast)
 
 
 # Defining the regression models 
@@ -130,36 +116,39 @@ def linear_regression(X_train, y_train, X_test, y_test, plot=True):
         plot_powergeneration(y_test, y_pred, 'Linear Regression')
     return y_pred        
 
+
 def knn_crossval(X,y,n_folds=10):
     '''
     Defining hyperparameters for grid search, and performs 
     cross validation.
     '''
-    num_neighbours = [1, 5, 20, 50, 100, 500, 800, 1000]
-    leaf_size = [10, 30, 50, 100, 200, 500]
-    param_grid = [{'n_neighbours': num_neighbours,
-                   'weights':['uniform'],
-                   'leaf_size':leaf_size},
-                 {'n_neighbours': num_neighbours,
-                  'weights':['distance'],
-                  'leaf_size':leaf_size}]
+    num_neighbors = [1, 5, 20, 50, 100, 500, 800, 1000]
+    param_grid = [{'n_neighbors': num_neighbors,
+                   'weights': ['uniform']},
+                 {'n_neighbors': num_neighbors,
+                  'weights': ['distance']}]
     grid_search = GridSearchCV(KNeighborsRegressor(),
-                                   param_grid,
-                                   cv=n_folds,
-                                   n_jobs=-1)
+                               param_grid,
+                               cv=n_folds,
+                               n_jobs=-1,
+                               scoring='neg_mean_squared_error',
+                               verbose=10)
     grid_search.fit(X, y)
-    grid_search.best_params_
+    print(grid_search.best_params_)
     return grid_search.best_params_    
-    
-def k_nearest_neighbors(X_train, y_train, X_test, y_test, plot=True):
+
+
+def k_nearest_neighbors(X_train, y_train, X_test, y_test,params=None, 
+                        plot=True, gridsearch=False):
     '''
     K-nearest neighbors function that trains the model, predicts, prints 
     errors and plots the results. Cross validation and grid search for 
     hyperparameters are used to get the best model.
     '''
-    
-    best_params = knn_crossval(X_train, y_train)    
-    neigh = KNeighborsRegressor().set_params(**best_params)
+
+    if gridsearch:
+        params = knn_crossval(X_train, y_train)
+    neigh = KNeighborsRegressor().set_params(**params)
     
     neigh.fit(X_train_selected, y_train) 
     y_pred = neigh.predict(X_test)
@@ -174,6 +163,7 @@ def k_nearest_neighbors(X_train, y_train, X_test, y_test, plot=True):
         # Plot outputs
         #plot_task1(X_test, y_test, y_pred, 'KNN')
         plot_powergeneration(y_test, y_pred, 'KNN')
+    return y_pred
 
 
 def svr_crossval(X, y, n_folds=10):
@@ -183,24 +173,28 @@ def svr_crossval(X, y, n_folds=10):
     '''
     Cs = [0.001, 0.01, 0.1, 1, 10, 100]
     gammas = [0.001, 0.01, 0.1, 1, 10]
-    param_grid = {'C': Cs, 'gamma' : gammas}
+    param_grid = {'C': Cs, 'gamma': gammas}
     grid_search = GridSearchCV(SVR(kernel='rbf'),
-                                   param_grid,
-                                   cv=nfolds,
-                                   n_jobs=-1)
+                               param_grid,
+                               cv=n_folds,
+                               n_jobs=-1,
+                               verbose=10)
     grid_search.fit(X, y)
-    grid_search.best_params_
+    print(grid_search.best_params_)
     return grid_search.best_params_        
         
-def support_vector_regression(X_train, y_train, X_test, y_test, plot=True):
+
+def support_vector_regression(X_train, y_train, X_test, y_test,params=None, 
+                              plot=True, gridsearch=False):
     '''
     SVR function that trains the model, predicts, prints 
     errors and plots the results. Cross validation and grid search for 
     hyperparameters are used to get the best model.
     '''
-    
-    best_params = svr_crossval(X_train, y_train)
-    svr_rbf = SVR().set_params(best_params)
+
+    if gridsearch:
+        params = svr_crossval(X_train, y_train)
+    svr_rbf = SVR().set_params(**params)
     
     y_pred = svr_rbf.fit(X_train_selected, y_train).predict(X_test_selected)
 
@@ -213,6 +207,7 @@ def support_vector_regression(X_train, y_train, X_test, y_test, plot=True):
     if plot:
         #plot_task1(X_test, y_test, y_pred, 'SVR')
         plot_powergeneration(y_test, y_pred, 'SVR')
+    return y_pred
 
 
 def ann_model(X_train, y_train, X_test, y_test, plot=True):
@@ -223,17 +218,17 @@ def ann_model(X_train, y_train, X_test, y_test, plot=True):
     input_shape = X_train.shape[1]
     output_shape = 1
     model = Sequential()
-
+    # Building the neural network
     model.add(InputLayer(input_shape=(input_shape,)))
     model.add(Dense(30, kernel_initializer='lecun_normal',
-                    bias_initializer='ones',activation='selu'))
+                    bias_initializer='ones', activation='selu'))
     model.add(Dropout(0.2))
     model.add(Dense(20, kernel_initializer='lecun_normal',
                     bias_initializer='ones',activation='softmax'))
     model.add(Dense(output_shape))
 
     model.compile(optimizer='rmsprop',
-                loss='mean_squared_error')  
+                  loss='mean_squared_error')
 
     model.fit(X_train, y_train, epochs=10,  verbose=0)
 
@@ -243,7 +238,58 @@ def ann_model(X_train, y_train, X_test, y_test, plot=True):
     rms_r2_score(y_test, y_pred)
 
     if plot:
+        #plot_task1(X_test, y_test, y_pred, 'ANN')
         plot_powergeneration(y_test, y_pred, model='ANN')
+    return y_pred
+
+
+def rms_r2_score(y_test, y_pred):
+    # The Root mean squared error
+    print("Root Mean squared error: %.4f"
+          % np.sqrt(mean_squared_error(y_test, y_pred)))
+    # Explained variance score: 1 is perfect prediction
+    print('R^2: %.2f' % r2_score(y_test, y_pred))
+
+
+# Store predictions to file function
+def store_predictions_to_file(y_pred, model=None, task=1,
+                              template='ForecastTemplate.csv'):
+    pred = pd.read_csv(template)
+    pred['FORECAST'] = y_pred[:len(pred)]
+    pred.to_csv('ForecastTemplate{1}-{0}.csv'.format(model, task), index=False)
+
+
+# Plotting function
+
+def plot_powergeneration(y_test, y_pred, model=None):
+    plt.figure(figsize=(15, 5))
+
+    plt.plot(y_test.values, color='darkorange', label='Real')
+
+    plt.plot(y_pred, color='navy', label='Predicted')
+
+    plt.xlabel('Time')
+    plt.ylabel('Wind Power')
+    plt.title(model)
+    plt.legend()
+    # plt.ylim(-0.1,y_test.max().all()+0.1)
+    plt.show()
+
+
+def plot_task1(X_test, y_test, y_pred, model=None):
+    plt.scatter(X_test, y_test, color='darkorange',
+                marker='.', label='Real', linewidth=0.1)
+
+    plt.scatter(X_test, y_pred, color='navy',
+                marker='.', label='Predicted', linewidth=0.1)
+
+    plt.xlabel('Wind speed')
+    plt.ylabel('Wind Power')
+    plt.title(model)
+    plt.legend()
+    plt.ylim(-0.1, y_test.max().all() + 0.1)
+    plt.show()
+
 
 
 # Task 1
@@ -262,20 +308,22 @@ y_train = train_y[:sel]
 X_test = weather_forecast
 y_test = solution
             
-X_train_selected = X_train['windspeed'].values.reshape(-1 ,1)
-X_test_selected = X_test['windspeed'].values.reshape(-1 ,1)
+X_train_selected = X_train['windspeed'].values.reshape(-1, 1)
+X_test_selected = X_test['windspeed'].values.reshape(-1, 1)
             
-print(X_train_selected.shape,X_test_selected.shape, y_train.shape, y_test.shape)
+print(X_train_selected.shape,
+      X_test_selected.shape, 
+      y_train.shape, y_test.shape)
 
 
-#Training and predicting
+# Training and predicting
 train_test = X_train_selected, y_train, X_test_selected, y_test
 
 np.random.seed(1)
 linear_regression(*train_test)
-k_nearest_neighbors(*train_test)
-support_vector_regression(*train_test)
-ann_model(*train_test)
+k_nearest_neighbors(*train_test, params={'n_neighbors': 800})
+y_pred=support_vector_regression(*train_test, {'C': 0.1, 'gamma': 0.01})
+pred=ann_model(*train_test)
 
 
 # TASK 2
@@ -305,6 +353,7 @@ train_test_one = X_train_one, y_train, X_test_one, y_test
 lr_pred=linear_regression(*train_test_one,plot=False)
 mlr_pred=linear_regression(*train_test_two,plot=False)
 
+
 # Plotting MLR, LR and real values
 plt.figure(figsize=(15,5))
 
@@ -330,7 +379,7 @@ test = np.arange(train[-1],len(y_test)+train[-1]).reshape(-1, 1)
 
 train_test = train, train_y, test, y_test
 
-_=linear_regression(*train_test)
+pred=linear_regression(*train_test, plot=False )
 
 #RNN
 
@@ -361,14 +410,18 @@ def fit_rnn(train, batch_size, nb_epoch, neurons):
     X, y = train[:, 0:-1], train[:, -1]
     X = X.reshape(X.shape[0], 1, X.shape[1])
     model = Sequential()
-    model.add(SimpleRNN(neurons, batch_input_shape=(batch_size, X.shape[1], X.shape[2]), stateful=True))
+    model.add(SimpleRNN(neurons, batch_input_shape=(batch_size, 
+                                                    X.shape[1], 
+                                                    X.shape[2]), 
+                        stateful=True))
     model.add(Dense(1))
     model.compile(loss='mean_squared_error', optimizer=RMSprop(lr=0.001))
     for i in range(nb_epoch):
-        model.fit(X, y, epochs=1, batch_size=batch_size, verbose=0, shuffle=False)
+        model.fit(X, y, epochs=1, batch_size=batch_size, verbose=0, 
+                  shuffle=False)
         model.reset_states()
         if i%10==0:
-                print('Finnished with %s epochs' %(i+1))
+                print('Finished with %s epochs' %(i+1))
     return model
  
 # make a one-step forecast
@@ -395,7 +448,7 @@ neurons = 4
 print('**----Start train model----**')
 # fit the model
 rnn_model = fit_rnn(supervised_values, batch_size, epochs, neurons)
-print('**----Finnished training----**')
+print('**----Finished training----**')
 
 # forecast the entire training dataset to build up state for forecasting
 train_reshaped = supervised_values[:, 0].reshape(len(supervised_values), 1, 1)
@@ -403,13 +456,13 @@ rnn_model.predict(train_reshaped, batch_size=batch_size)
 
 # walk-forward validation on the test data
 predictions = list()
-history = supervised_values[-batch_size:,-2]
+history = supervised_values[-batch_size:, -2]
 for i in range(len(y_test)):
-    X=np.array(history[-batch_size:])
+    X = np.array(history[-batch_size:])
     yhat = forecast_rnn(rnn_model, batch_size, X)
     # store forecast
     predictions.append(yhat)
-    history= np.concatenate((history,np.array([yhat])), axis=0)
+    history = np.concatenate((history, np.array([yhat])), axis=0)
     
 # report performance
 r2 = r2_score(y_test.values, predictions)
@@ -426,8 +479,11 @@ ax.plot(y_test.index,y_test.values, label='Real')
 ax.xaxis.set_major_locator(DayLocator())
 #set major ticks format
 ax.xaxis.set_major_formatter(DateFormatter('%b %d'))
-ax.plot(pd.DataFrame(predictions,index=y_test.index),label='Pred')
+ax.plot(pd.DataFrame(predictions,index=y_test.index),label='RNN')
+ax.plot(pd.DataFrame(pred,index=y_test.index),label='LR')
 plt.legend()
 plt.gcf().autofmt_xdate()
 plt.show()
 
+# The function used to manually store the predictions.
+store_predictions_to_file(predictions, 'RNN', task=3)
